@@ -1,10 +1,9 @@
-#include <Arduino.h>
 #include <XSpaceV2.h>
-#include <PubSubClient.h>
 
 volatile double T = 0;
 volatile double Periodo = 1000000;
 volatile double Tant = 0;
+volatile double counter = 0;
 
 WiFiClient XSpaceV2WifiClient;
 PubSubClient XSpaceV2MQTT(XSpaceV2WifiClient);
@@ -14,23 +13,18 @@ void IRAM_ATTR ISR_encoder()
 {
     T = micros();
 
-    if(digitalRead(encoder_CHA) == HIGH){
-        Periodo = T - Tant;
-        Tant = T;
+    Periodo = T - Tant;
+    Tant = T;
 
-        if(digitalRead(encoder_CHB) == LOW){
-            Periodo = (-1)*Periodo;
-        }
-
-        digitalWrite(21,!digitalRead(21));
-    }
-    
-
+    if(digitalRead(encoder_CHB) == LOW){
+        Periodo = (-1)*Periodo;
+        counter--;
+    }else counter++;
     
 }
 
 
-void XSpaceV2::init(int freq){
+void XSpaceV2Board::init(int freq, double resolution){
     pinMode(nSLEEP,OUTPUT);
 
     ledcAttachPin(IN1, 1);
@@ -43,17 +37,19 @@ void XSpaceV2::init(int freq){
     pinMode(encoder_CHB,INPUT_PULLDOWN);
     attachInterrupt(encoder_CHA, ISR_encoder, HIGH);
 
+    this->_resolution = resolution;
+
 }
 
-void XSpaceV2::DRV8837_Sleep(){
+void XSpaceV2Board::DRV8837_Sleep(){
     digitalWrite(nSLEEP,LOW);
 }
 
-void XSpaceV2::DRV8837_Wake(){
+void XSpaceV2Board::DRV8837_Wake(){
     digitalWrite(nSLEEP,HIGH);
 }
 
-void XSpaceV2::DRV8837_Voltage(double vp){
+void XSpaceV2Board::DRV8837_Voltage(double vp){
 
     double vm = 5;
 
@@ -71,18 +67,18 @@ void XSpaceV2::DRV8837_Voltage(double vp){
     }
 }
 
-double XSpaceV2::GetEncoderSpeed(int modo){
+double XSpaceV2Board::GetEncoderSpeed(int modo){
     double vel=0;
 
     switch (modo)
     {
     case DEGREES_PER_SECOND:
-        vel = 375000.0/Periodo;
+        vel = 360000000.0/(this->_resolution*Periodo);
         if(abs(vel)>800)vel=vel_ant;
         if(abs(vel-vel_ant)>100)vel=vel_ant;
         break;
     case RADS_PER_SECOND:
-        vel = 6544.984694978736/Periodo;
+        vel = 6283185.30717/(this->_resolution*Periodo);
         break;
     
     default:
@@ -93,12 +89,28 @@ double XSpaceV2::GetEncoderSpeed(int modo){
 
     return vel;
 }
+double XSpaceV2Board::GetEncoderPosition(int modo){
+    double pos=0;
 
+    switch (modo)
+    {
+    case DEGREES:
+        pos = counter/this->_resolution*360.0;
+        break;
+    case RADS:
+        pos = counter/this->_resolution*2*PI;
+        break;
+    
+    default:
+        break;
+    }
 
+    return pos;
+}
 
 /* Metodos reescritos para un mejor entendimiento */
 
-void XSpaceV2::Wifi_init(const char* ssid, const char* password){
+void XSpaceV2Board::Wifi_init(const char* ssid, const char* password){
 	
     if(this->XSpace_info){
         Serial.println();
@@ -123,7 +135,7 @@ void XSpaceV2::Wifi_init(const char* ssid, const char* password){
 
 }
 
-void XSpaceV2::Mqtt_Connect(const char *clientId, const char *mqtt_user, const char *mqtt_pass){
+void XSpaceV2Board::Mqtt_Connect(const char *clientId, const char *mqtt_user, const char *mqtt_pass){
 
 	while (!XSpaceV2MQTT.connected()) {
 		
@@ -144,22 +156,20 @@ void XSpaceV2::Mqtt_Connect(const char *clientId, const char *mqtt_user, const c
 
 }
 
-
-
-void XSpaceV2::Mqtt_init(const char *mqtt_server, uint16_t mqtt_port){
+void XSpaceV2Board::Mqtt_init(const char *mqtt_server, uint16_t mqtt_port){
     XSpaceV2MQTT.setServer(mqtt_server, mqtt_port);
     XSpaceV2MQTT.setCallback([this] (char* topic, byte* payload, unsigned int length) { Mqtt_Callback(topic, payload, length); });
 }
 
-bool XSpaceV2::Mqtt_IsConnected(){
+bool XSpaceV2Board::Mqtt_IsConnected(){
     return XSpaceV2MQTT.connected();
 }
 
-void XSpaceV2::Mqtt_Publish(const char* topic, const char* payload){
+void XSpaceV2Board::Mqtt_Publish(const char* topic, const char* payload){
     XSpaceV2MQTT.publish(topic,payload);
 }
 
-void XSpaceV2::Mqtt_Suscribe(const char* topic){
+void XSpaceV2Board::Mqtt_Suscribe(const char* topic){
     if(this->Mqtt_IsConnected()){
          XSpaceV2MQTT.subscribe(topic);
          if(this->XSpace_info){
@@ -173,10 +183,37 @@ void XSpaceV2::Mqtt_Suscribe(const char* topic){
 
 }
 
-void XSpaceV2::Mqtt_KeepAlive(){
+void XSpaceV2Board::Mqtt_KeepAlive(){
     XSpaceV2MQTT.loop();
 }
 
-void XSpaceV2::SerialInfo(bool mode){
+void XSpaceV2Board::SerialInfo(bool mode){
     this->XSpace_info = mode;
+}
+
+
+/***************************************************/
+
+double XSpaceControl::control_law(double var_real, double var_ref, double Kp, double Ki,double Ts, int aproximation){
+    double u=0;
+
+    double e = var_ref - var_real; 
+
+    switch (aproximation)
+    {
+    case FORWARD_EULER:
+        u = 0;
+        break;
+    case TUSTIN:
+        u = (Kp+Ts/2*Ki)*e + (Ts/2*Ki-Kp)*this->_e_1 + this->_u_1;
+        this->_e_1 = e;
+        this->_u_1 = u;
+        break;
+    
+    default:
+        break;
+    }
+
+    return u;
+    
 }
