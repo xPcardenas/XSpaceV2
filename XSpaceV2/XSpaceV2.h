@@ -1,5 +1,5 @@
 /*
-  XSpaceV2 Library 
+  XSpaceV2 v1.1 beta 091620221613
 
   Version   :  1.1
   Autor     :  Pablo Cardenas
