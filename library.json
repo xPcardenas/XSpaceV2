@@ -1,0 +1,18 @@
+{
+    "name": "XSpaceV2",
+    "keywords": "control, drv8837, esp32, iot",
+    "description": "Library used whit XSpaceV2 platform based on ESP32-WROOM and DRV8837 driver",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/xPcardenas/XSpaceV2"
+    },
+    "version": "1.1",
+    "frameworks": "arduino",
+    "platforms": [
+        "espressif32"
+    ],
+    "dependencies":
+    {
+        "knolleary/PubSubClient": "^2.8"
+    }
+}
